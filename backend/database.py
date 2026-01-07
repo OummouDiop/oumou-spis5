@@ -1,12 +1,10 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
 
-DATABASE_URL = "sqlite:///./irrigation.db"
+# Nouvelle configuration MongoDB
+from pymongo import MongoClient
 
-engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False}
-)
+# URL de connexion MongoDB (par défaut, local)
+MONGO_URL = "mongodb://localhost:27017/"
+DB_NAME = "irrigation"
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-Base = declarative_base()
+client = MongoClient(MONGO_URL)
+db = client[DB_NAME]

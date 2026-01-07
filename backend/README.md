@@ -1,4 +1,4 @@
-# Smart Irrigation System – Backend FastAPI + Firebase
+# Smart Irrigation System – Backend FastAPI + mongodb
 
 Ce backend gère :
 - la réception des données capteurs IoT

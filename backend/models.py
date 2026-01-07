@@ -1,35 +1,29 @@
-from sqlalchemy import Column, Integer, Float, DateTime, String, Boolean
-from sqlalchemy.sql import func
-from pydantic import BaseModel
-from typing import Literal
 
-from database import Base
+from pydantic import BaseModel, Field
+from typing import Optional, Literal
+from datetime import datetime
 
-class SensorData(Base):
-    __tablename__ = "sensor_data"
+# Modèles Pydantic pour MongoDB
+class SensorData(BaseModel):
+    id: Optional[str] = Field(None, alias="_id")
+    zone_id: str = "zone-1"
+    humidity: float
+    temperature: float
+    soil_moisture: float
+    soil_moisture_10cm: Optional[float] = None
+    soil_moisture_30cm: Optional[float] = None
+    soil_moisture_60cm: Optional[float] = None
+    light: Optional[float] = None
+    wind_speed: Optional[float] = None
+    rainfall: Optional[bool] = False
+    rainfall_intensity: Optional[str] = "none"
+    created_at: Optional[datetime] = None
 
-    id = Column(Integer, primary_key=True, index=True)
-    zone_id = Column(String, default="zone-1")
-    humidity = Column(Float)
-    temperature = Column(Float)
-    soil_moisture = Column(Float)
-    soil_moisture_10cm = Column(Float, nullable=True)
-    soil_moisture_30cm = Column(Float, nullable=True)
-    soil_moisture_60cm = Column(Float, nullable=True)
-    light = Column(Float, nullable=True)
-    wind_speed = Column(Float, nullable=True)
-    rainfall = Column(Boolean, default=False)
-    rainfall_intensity = Column(String, default="none")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-
-class ValveState(Base):
-    __tablename__ = "valve_states"
-
-    id = Column(Integer, primary_key=True, index=True)
-    zone_id = Column(String, unique=True, index=True)
-    is_open = Column(Boolean, default=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+class ValveState(BaseModel):
+    id: Optional[str] = Field(None, alias="_id")
+    zone_id: str
+    is_open: bool = False
+    updated_at: Optional[datetime] = None
 
 
 # ---------- Pydantic Models ----------
