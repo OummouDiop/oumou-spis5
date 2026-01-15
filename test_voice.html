@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Synthèse Vocale</title>
+</head>
+<body>
+    <h1>Test de la Synthèse Vocale</h1>
+    <button id="testBtn">Cliquez pour tester la voix</button>
+    <p id="status">Statut: En attente</p>
+
+    <script>
+        document.getElementById('testBtn').addEventListener('click', function() {
+            const status = document.getElementById('status');
+            
+            if ('speechSynthesis' in window) {
+                status.textContent = 'Statut: Synthèse vocale disponible, lecture en cours...';
+                
+                const utterance = new SpeechSynthesisUtterance("l'irrigation a commencé");
+                utterance.lang = 'fr-FR';
+                utterance.rate = 0.9;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+                
+                utterance.onend = function() {
+                    status.textContent = 'Statut: Lecture terminée avec succès ✓';
+                };
+                
+                utterance.onerror = function(event) {
+                    status.textContent = 'Statut: Erreur - ' + event.error;
+                };
+                
+                window.speechSynthesis.speak(utterance);
+            } else {
+                status.textContent = 'Statut: Synthèse vocale NON supportée par votre navigateur';
+            }
+        });
+    </script>
+</body>
+</html>

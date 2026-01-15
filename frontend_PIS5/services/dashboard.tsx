@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { backendService } from './backendService';
@@ -14,10 +14,64 @@ function Dashboard() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [weather, setWeather] = useState<WeatherCondition>({ condition: 'Sunny', ambientTemp: 25 });
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [prediction, setPrediction] = useState<{ prediction: number | null; error: string | null; confidence: number | null } | null>(null);
+  
+  // Référence pour suivre l'état précédent des valves
+  const previousValveStatesRef = useRef<Map<string, boolean>>(new Map());
+  
+  // Référence pour l'élément audio du son d'eau
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Fonction pour annoncer avec la voix
+  const speakMessage = (message: string) => {
+    const utterance = new SpeechSynthesisUtterance(message);
+    utterance.lang = 'fr-FR';
+    window.speechSynthesis.speak(utterance);
+    console.log('🔊 Message vocal:', message);
+  };
+
+  // Fonction pour jouer le son d'eau en boucle
+  const playWaterSound = () => {
+    if (audioRef.current) {
+      audioRef.current.play().catch(err => console.error('Erreur lecture audio:', err));
+      console.log('🎵 Son d\'eau démarré');
+    }
+  };
+
+  // Fonction pour arrêter le son d'eau
+  const stopWaterSound = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      console.log('🔇 Son d\'eau arrêté');
+    }
+  };
 
   // Subscribe to backend service on mount
   useEffect(() => {
     const unsubscribe = backendService.subscribe((updatedZones, updatedWeather) => {
+      // Vérifier les changements d'état d'irrigation AVANT de mettre à jour
+      updatedZones.forEach(zone => {
+        const previousState = previousValveStatesRef.current.get(zone.id);
+        const currentState = zone.isValveOpen;
+
+        // Si l'état a changé
+        if (previousState !== undefined && previousState !== currentState) {
+          console.log(`🔔 Changement détecté pour ${zone.name}: ${previousState ? 'OUVERT' : 'FERMÉ'} → ${currentState ? 'OUVERT' : 'FERMÉ'}`);
+          
+          if (currentState) {
+            speakMessage("encour d'irrigation");
+            playWaterSound();
+          } else {
+            speakMessage("Arret de l'irrigation");
+            stopWaterSound();
+          }
+        }
+
+        // Mettre à jour l'état précédent
+        previousValveStatesRef.current.set(zone.id, currentState);
+      });
+
       setZones(updatedZones);
       setWeather(updatedWeather);
       
@@ -29,6 +83,21 @@ function Dashboard() {
     return () => unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Récupérer la prédiction quand la zone sélectionnée change
+  useEffect(() => {
+    if (selectedZoneId) {
+      const fetchPrediction = async () => {
+        const predictionData = await backendService.getSoilMoisturePrediction(selectedZoneId);
+        setPrediction(predictionData);
+      };
+      fetchPrediction();
+      
+      // Mettre à jour la prédiction toutes les 30 secondes
+      const predictionInterval = setInterval(fetchPrediction, 30000);
+      return () => clearInterval(predictionInterval);
+    }
+  }, [selectedZoneId]);
 
   const selectedZone = zones.find(z => z.id === selectedZoneId) || zones[0];
 
@@ -144,6 +213,27 @@ function Dashboard() {
                 </h3>
                 <p className="text-gray-500 mt-1">{selectedZone.area} hectares</p>
               </div>
+
+              {/* Animation de gouttes qui tombent */}
+              <div className="flex-grow flex items-center justify-center relative h-20 overflow-hidden">
+                {selectedZone.isValveOpen ? (
+                  <>
+                    <style>{`
+                      @keyframes dropFall {
+                        0% { transform: translateY(-20px); opacity: 1; }
+                        100% { transform: translateY(80px); opacity: 0; }
+                      }
+                      .drop { animation: dropFall 1.5s infinite; }
+                    `}</style>
+                    <span className="drop text-2xl absolute left-1/3">💧</span>
+                    <span className="drop text-2xl absolute left-1/2">💧</span>
+                    <span className="drop text-2xl absolute left-2/3">💧</span>
+                  </>
+                ) : (
+                  <span className="text-2xl">🌾</span>
+                )}
+              </div>
+
               {/* Indicateur d'état de l'irrigation (non-cliquable) */}
               <div 
                 className={`flex items-center gap-3 px-6 py-3 rounded-lg font-bold text-lg shadow-lg ${
@@ -311,6 +401,51 @@ function Dashboard() {
                   </div>
                 </div>
               </div>
+
+              {/* PRÉDICTION - Humidité du sol prochaines heures */}
+              {prediction && (
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-2xl border border-blue-100">
+                  <h4 className="text-lg font-bold text-blue-800 mb-4 flex items-center gap-2">
+                    <Sprout size={20} />
+                    🔮 Prédiction (Prochaines heures)
+                  </h4>
+                  {prediction.error ? (
+                    <div className="text-center text-red-600 text-sm">{prediction.error}</div>
+                  ) : prediction.prediction !== null ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="bg-white p-4 rounded-xl shadow-sm border border-blue-200">
+                        <div className="text-sm font-semibold text-blue-600 mb-2">Humidité du sol prédite</div>
+                        <div className="text-3xl font-bold text-blue-800 mb-2">
+                          {prediction.prediction.toFixed(1)}%
+                        </div>
+                        <div className="w-full h-2 bg-blue-100 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-blue-400 to-blue-600 rounded-full"
+                            style={{ width: `${Math.min(prediction.prediction, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {prediction.confidence && (
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-blue-200">
+                          <div className="text-sm font-semibold text-blue-600 mb-2">Confiance du modèle</div>
+                          <div className="text-3xl font-bold text-indigo-800 mb-2">
+                            {(prediction.confidence * 100).toFixed(1)}%
+                          </div>
+                          <div className="w-full h-2 bg-blue-100 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-indigo-400 to-indigo-600 rounded-full"
+                              style={{ width: `${prediction.confidence * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center text-gray-600 text-sm">En attente de données...</div>
+                  )}
+                </div>
+              )}
 
               {/* Troisième ligne - Conditions environnementales */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -565,6 +700,15 @@ function Dashboard() {
 
         </section>
       </main>
+
+      {/* Élément audio caché pour le son d'eau */}
+      <audio 
+        ref={audioRef} 
+        src="/images/eau_coule.mp4" 
+        loop 
+        preload="auto"
+        style={{ display: 'none' }}
+      />
     </div>
   );
 }

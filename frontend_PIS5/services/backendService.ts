@@ -219,9 +219,21 @@ class BackendService {
     }
   }
 
-  private notify() {
-    console.log(`🔔 [BackendService] Notifying ${this.listeners.length} listeners`);
-    this.listeners.forEach(l => l(this.zones, this.weather));
+  public async getSoilMoisturePrediction(zoneId: string) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/predict-soil-moisture/${zoneId}`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`🔮 [BackendService] Soil moisture prediction for ${zoneId}:`, data);
+        return data;
+      } else {
+        console.error('❌ Failed to get prediction');
+        return null;
+      }
+    } catch (error) {
+      console.error('❌ Error getting prediction:', error);
+      return null;
+    }
   }
 }
 

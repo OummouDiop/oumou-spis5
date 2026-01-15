@@ -5,6 +5,16 @@ import math
 from sensors import CapteurHumidite, CapteurTemperature, CapteurLumiere, CapteurPluie, CapteurVent, CapteurDebitEau
 from config import CONFIG_SIMULATION, CONFIG_CAPTEURS
 
+# Forcer l'encodage UTF-8 pour stdout/stderr (utile sous Windows)
+import sys
+try:
+    # Python 3.7+ provides reconfigure for text streams
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except Exception:
+    # Fall back silently if reconfigure is not available
+    pass
+
 # Configuration de l'API backend
 BACKEND_URL = "http://127.0.0.1:8000/send-data"
 

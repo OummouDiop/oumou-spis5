@@ -3,11 +3,38 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import db
 from models import SensorData, SensorDataCreate, IrrigationDecision, ValveState, ValveToggleRequest, ValveToggleResponse
 from irrigation_logic import irrigation_decision
+import joblib
+import numpy as np
+import os
 
 # Plus besoin de créer les tables avec MongoDB
 
 # Variable globale pour stocker la météo forcée
 forced_weather = {"condition": None, "rain_intensity": None}
+
+# Charger le modèle de prédiction au démarrage
+import os
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "soil_moisture_model_v2.pkl")
+print(f"📂 Chemin du modèle: {MODEL_PATH}")
+print(f"📂 Chemin absolu: {os.path.abspath(MODEL_PATH)}")
+print(f"✅ Fichier existe: {os.path.exists(MODEL_PATH)}")
+
+soil_moisture_pipeline = None
+
+try:
+    if os.path.exists(MODEL_PATH):
+        soil_moisture_pipeline = joblib.load(MODEL_PATH)
+        # Le pipeline est un dict avec scaler + model + metadata
+        if isinstance(soil_moisture_pipeline, dict):
+            print(f"✅ Pipeline de prédiction chargé: version {soil_moisture_pipeline.get('version', 'unknown')}")
+        else:
+            print(f"✅ Modèle de prédiction chargé avec succès !")
+    else:
+        print(f"❌ Fichier modèle non trouvé: {MODEL_PATH}")
+except Exception as e:
+    print(f"❌ Erreur lors du chargement du modèle: {e}")
+    import traceback
+    traceback.print_exc()
 
 app = FastAPI()
 
@@ -27,7 +54,7 @@ app.add_middleware(
 
 @app.get("/")
 def home():
-    return {"message": "IoT Irrigation Backend Running ✔"}
+    return {"message": "IoT Irrigation Backend Running"}
 
 
 
@@ -85,7 +112,8 @@ def get_history(zone_id: str = None):
     query = {}
     if zone_id:
         query["zone_id"] = zone_id
-    records = list(db["sensor_data"].find(query).sort("_id", -1).limit(100))
+    # Trier par created_at décroissant pour avoir les plus récents en premier
+    records = list(db["sensor_data"].find(query).sort("created_at", -1).limit(100))
     result = []
     for r in records:
         created_at = r.get("created_at")
@@ -135,8 +163,8 @@ def toggle_valve(request: ValveToggleRequest):
     else:
         db["valve_states"].update_one({"zone_id": request.zone_id}, {"$set": {"is_open": request.valve_open}})
 
-    status = "ouverte" if request.valve_open else "fermée"
-    action = "💦 IRRIGATION ACTIVÉE" if request.valve_open else "🛑 IRRIGATION ARRÊTÉE"
+    status = "ouverte" if request.valve_open else "fermee"
+    action = "IRRIGATION ACTIVEE" if request.valve_open else "IRRIGATION ARRETEE"
 
     return ValveToggleResponse(
         zone_id=request.zone_id,
@@ -186,4 +214,100 @@ def set_weather(condition: str):
 @app.get("/get-weather")
 def get_weather():
     return forced_weather
+
+
+def get_soil_moisture_prediction(zone_id: str):
+    """
+    Retourne la prédiction du modèle pour l'humidité du sol.
+    Utilise les 5 derniers points de données (24h d'historique).
+    """
+    if soil_moisture_pipeline is None:
+        return {
+            "prediction": None,
+            "error": "Modèle non disponible",
+            "confidence": None
+        }
+    
+    try:
+        # Récupérer les 5 derniers points (les plus récents d'abord)
+        records = list(db["sensor_data"].find({"zone_id": zone_id}).sort("created_at", -1).limit(5))
+        
+        if len(records) < 5:
+            return {
+                "prediction": None,
+                "error": f"Pas assez de données historiques ({len(records)}/5 points)",
+                "confidence": None
+            }
+        
+        # Inverser pour avoir l'ordre chronologique (plus ancien → plus récent)
+        records = records[::-1]
+        
+        # Extraire les features (10 capteurs par point)
+        features_list = []
+        for record in records:
+            point_features = [
+                float(record.get("humidity", 0)),
+                float(record.get("temperature", 0)),
+                float(record.get("soil_moisture", 0)),
+                float(record.get("soil_moisture_10cm", 0)),
+                float(record.get("soil_moisture_30cm", 0)),
+                float(record.get("soil_moisture_60cm", 0)),
+                float(record.get("light", 0)),
+                float(record.get("wind_speed", 0)),
+                float(record.get("rainfall", 0)) if isinstance(record.get("rainfall"), (int, float)) else (1.0 if record.get("rainfall") else 0.0),
+                float(record.get("rainfall_intensity", 0)) if isinstance(record.get("rainfall_intensity"), (int, float)) else 0.0,
+            ]
+            features_list.extend(point_features)
+        
+        # Convertir en array (50 features total : 5 points × 10 capteurs)
+        X = np.array(features_list).reshape(1, -1)
+        
+        # Faire la prédiction selon le format du pipeline
+        if isinstance(soil_moisture_pipeline, dict):
+            # Nouveau format avec scaler
+            scaler = soil_moisture_pipeline['scaler']
+            model = soil_moisture_pipeline['model']
+            X_scaled = scaler.transform(X)
+            prediction = model.predict(X_scaled)[0]
+        else:
+            # Ancien format (modèle seul)
+            prediction = soil_moisture_pipeline.predict(X)[0]
+        
+        # Calculer une confiance approximative basée sur la variance des prédictions
+        confidence = None
+        if isinstance(soil_moisture_pipeline, dict) and 'model' in soil_moisture_pipeline:
+            model = soil_moisture_pipeline['model']
+            if hasattr(model, 'estimators_'):
+                # Pour RandomForest, calculer la variance entre les arbres
+                try:
+                    predictions = [tree.predict(X_scaled if isinstance(soil_moisture_pipeline, dict) else X)[0] 
+                                 for tree in model.estimators_[:50]]  # Utiliser 50 arbres pour la vitesse
+                    variance = np.std(predictions)
+                    # Confidence inversement proportionnelle à la variance (max 100%)
+                    confidence = float(max(0, min(100, 100 - variance)))
+                except:
+                    pass
+        
+        return {
+            "prediction": float(round(prediction, 2)),
+            "error": None,
+            "confidence": confidence,
+            "num_samples_used": len(records)
+        }
+        
+    except Exception as e:
+        return {
+            "prediction": None,
+            "error": str(e),
+            "confidence": None
+        }
+
+
+@app.get("/predict-soil-moisture/{zone_id}")
+def predict_soil_moisture(zone_id: str):
+    """
+    Retourne la prédiction de l'humidité du sol pour les prochaines heures.
+    Utilise les 5 derniers points (24h d'historique).
+    """
+    return get_soil_moisture_prediction(zone_id)
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { backendService } from '../services/backendService';
 import { Zone, WeatherCondition } from '../types';
 import ZoneCard from '../components/ZoneCard';
@@ -14,9 +14,42 @@ interface DashboardProps {
 }
 
 function Dashboard({ onNavigate }: DashboardProps) {
+  console.log('🚀🚀🚀 [Dashboard] COMPOSANT DASHBOARD MONTÉ / RENDU');
+  
   const [zones, setZones] = useState<Zone[]>([]);
   const [weather, setWeather] = useState<WeatherCondition>({ condition: 'Sunny', ambientTemp: 25 });
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  
+  // Utiliser useRef pour garder l'état précédent sans causer de re-render
+  const previousValveStatesRef = useRef<Map<string, boolean>>(new Map());
+
+  // Fonction pour annoncer vocalement l'état de l'irrigation
+  const speakMessage = (message: string) => {
+    if ('speechSynthesis' in window) {
+      // Annuler toute synthèse en cours
+      window.speechSynthesis.cancel();
+      
+      const utterance = new SpeechSynthesisUtterance(message);
+      utterance.lang = 'fr-FR';
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      
+      console.log('🔊 [Dashboard] Annonce vocale:', message);
+      
+      utterance.onerror = (event) => {
+        console.error('❌ [Dashboard] Erreur synthèse vocale:', event.error);
+      };
+      
+      utterance.onend = () => {
+        console.log('✅ [Dashboard] Annonce vocale terminée');
+      };
+      
+      window.speechSynthesis.speak(utterance);
+    } else {
+      console.warn('⚠️ [Dashboard] Synthèse vocale non supportée par ce navigateur');
+    }
+  };
 
   // Subscribe to backend service on mount
   useEffect(() => {
@@ -35,12 +68,55 @@ function Dashboard({ onNavigate }: DashboardProps) {
           temp: firstZone.currentReading.temperature,
           soil10: firstZone.currentReading.soilMoisture10cm,
           soil30: firstZone.currentReading.soilMoisture30cm,
-          soil60: firstZone.currentReading.soilMoisture60cm
+          soil60: firstZone.currentReading.soilMoisture60cm,
+          valveOpen: firstZone.isValveOpen
         });
+
+        // Détecter les changements d'état de la valve et annoncer vocalement
+        updatedZones.forEach(zone => {
+          const previousState = previousValveStatesRef.current.get(zone.id);
+          const currentState = zone.isValveOpen;
+
+          console.log(`🔍 [Dashboard] ========== VALVE CHECK ==========`);
+          console.log(`🔍 [Dashboard] Zone: ${zone.id} (${zone.name})`);
+          console.log(`🔍 [Dashboard] Previous state: ${previousState}`);
+          console.log(`🔍 [Dashboard] Current state: ${currentState}`);
+          console.log(`🔍 [Dashboard] Previous is undefined?: ${previousState === undefined}`);
+          console.log(`🔍 [Dashboard] States are different?: ${previousState !== currentState}`);
+          console.log(`🔍 [Dashboard] Will speak?: ${previousState !== undefined && previousState !== currentState}`);
+
+          if (previousState !== undefined && previousState !== currentState) {
+            const message = currentState 
+              ? `L'irrigation a commencé pour ${zone.name}`
+              : `L'irrigation s'est arrêtée pour ${zone.name}`;
+            
+            console.log('🔊🔊🔊 [Dashboard] CHANGEMENT DÉTECTÉ! ANNONCE:', message);
+            console.log('🔊 [Dashboard] Appel de speakMessage...');
+            
+            try {
+              speakMessage(message);
+              console.log('🔊 [Dashboard] speakMessage appelé avec succès');
+            } catch (error) {
+              console.error('❌ [Dashboard] Erreur lors de l\'appel de speakMessage:', error);
+            }
+          } else {
+            console.log(`⏸️ [Dashboard] Pas de changement ou premier état`);
+          }
+          
+          // Mettre à jour l'état précédent pour cette zone
+          previousValveStatesRef.current.set(zone.id, currentState);
+          console.log(`💾 [Dashboard] État sauvegardé: ${zone.id} = ${currentState}`);
+          console.log(`🔍 [Dashboard] ========== FIN CHECK ==========`);
+        });
+
+        console.log('💾 [Dashboard] Tous les états sauvegardés:', Object.fromEntries(previousValveStatesRef.current));
       }
       
-      setZones(updatedZones);
-      setWeather(updatedWeather);
+      // Force new array/object references to trigger React re-render
+      setZones([...updatedZones]);
+      setWeather({...updatedWeather});
+      
+      console.log('🔄 [Dashboard] State updated with new data');
       
       // Auto-select first zone if none selected
       if (!selectedZoneId && updatedZones.length > 0) {
@@ -124,6 +200,13 @@ function Dashboard({ onNavigate }: DashboardProps) {
             <Droplet className="text-blue-500" />
             SmartIrrig
           </h1>
+          
+          {/* Message d'information sur la synthèse vocale */}
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-xs text-blue-800">
+              🔊 Annonces vocales automatiques activées
+            </p>
+          </div>
         </div>
         
         <nav className="mt-8">
