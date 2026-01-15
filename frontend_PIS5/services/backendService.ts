@@ -121,8 +121,8 @@ class BackendService {
 
   public subscribe(listener: Listener): () => void {
     this.listeners.push(listener);
-    // Send immediate initial state
-    listener(this.zones, this.weather);
+    // Send immediate initial state (send copies to avoid accidental mutation)
+    listener(this.zones.map(z => ({ ...z, currentReading: { ...z.currentReading } })), { ...this.weather });
     return () => {
       this.listeners = this.listeners.filter(l => l !== listener);
     };
@@ -233,6 +233,17 @@ class BackendService {
     } catch (error) {
       console.error('❌ Error getting prediction:', error);
       return null;
+    }
+  }
+
+  // Notify all listeners with immutable copies so React detects updates
+  private notify() {
+    try {
+      const zonesCopy = this.zones.map(z => ({ ...z, currentReading: { ...z.currentReading }, sensorHistory: Array.isArray(z.sensorHistory) ? z.sensorHistory.map(h => ({ ...h })) : [] }));
+      const weatherCopy = { ...this.weather };
+      this.listeners.forEach(l => l(zonesCopy, weatherCopy));
+    } catch (err) {
+      console.error('❌ [BackendService] notify error:', err);
     }
   }
 }
