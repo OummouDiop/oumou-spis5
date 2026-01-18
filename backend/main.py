@@ -12,6 +12,14 @@ import os
 # Variable globale pour stocker la météo forcée
 forced_weather = {"condition": None, "rain_intensity": None}
 
+# Variable globale pour gérer la pause de la simulation backend
+from datetime import datetime, timedelta
+simulation_control = {
+    "paused": False,
+    "pause_until": None,
+    "manual_mode": False
+}
+
 # Charger le modèle de prédiction au démarrage
 import os
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "soil_moisture_model_v2.pkl")
@@ -60,8 +68,10 @@ def home():
 
 @app.post("/send-data", response_model=IrrigationDecision)
 def receive_sensor_data(data: SensorDataCreate):
+    global simulation_control
+    
     # Préparer le document à insérer
-    from datetime import datetime
+    from datetime import datetime, timedelta
     record_dict = {
         "zone_id": data.zone_id,
         "humidity": data.humidity,
@@ -74,13 +84,14 @@ def receive_sensor_data(data: SensorDataCreate):
         "wind_speed": data.wind_speed or 8.0,
         "rainfall": data.rainfall,
         "rainfall_intensity": data.rainfall_intensity,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.utcnow(),
+        "source": "manual" if simulation_control.get("manual_mode") else "auto"
     }
     result = db["sensor_data"].insert_one(record_dict)
     record_id = result.inserted_id
 
-    # Decision based on soil moisture + previous pump state
-    decision = irrigation_decision(data.soil_moisture, data.pump_was_active)
+    # Decision based on soil moisture + previous pump state + rainfall
+    decision = irrigation_decision(data.soil_moisture, data.pump_was_active, data.rainfall)
 
     # Mettre à jour l'état de la valve dans la base de données
     valve_state = db["valve_states"].find_one({"zone_id": data.zone_id})
@@ -91,20 +102,50 @@ def receive_sensor_data(data: SensorDataCreate):
 
     return decision
 
-    # Decision based on soil moisture + previous pump state
-    decision = irrigation_decision(data.soil_moisture, data.pump_was_active)
+
+# Nouvelle route pour la simulation manuelle
+@app.post("/send-manual-data", response_model=IrrigationDecision)
+def receive_manual_data(data: SensorDataCreate):
+    global simulation_control
     
-    # Mettre à jour l'état de la valve dans la base de données
-    valve_state = db.query(ValveState).filter(ValveState.zone_id == data.zone_id).first()
-    if not valve_state:
-        valve_state = ValveState(zone_id=data.zone_id, is_open=decision['pump'])
-        db.add(valve_state)
-    else:
-        valve_state.is_open = decision['pump']
-    db.commit()
+    # Activer le mode manuel et mettre en pause pendant 1 minute
+    simulation_control["manual_mode"] = True
+    simulation_control["paused"] = True
+    simulation_control["pause_until"] = datetime.utcnow() + timedelta(seconds=60)
+    
+    # Traiter les données manuelles
+    return receive_sensor_data(data)
 
-    return decision
 
+# Route pour vérifier si la simulation doit être en pause
+@app.get("/simulation-status")
+def get_simulation_status():
+    global simulation_control
+    
+    # Vérifier si la pause est terminée
+    if simulation_control["paused"] and simulation_control["pause_until"]:
+        if datetime.utcnow() >= simulation_control["pause_until"]:
+            simulation_control["paused"] = False
+            simulation_control["manual_mode"] = False
+            simulation_control["pause_until"] = None
+    
+    # Récupérer les dernières données pour synchroniser la simulation
+    latest_data = db["sensor_data"].find_one(sort=[("created_at", -1)])
+    valve_state = db["valve_states"].find_one({"zone_id": "zone-1"})
+    
+    return {
+        "paused": simulation_control["paused"],
+        "manual_mode": simulation_control["manual_mode"],
+        "resume_time": simulation_control["pause_until"].isoformat() if simulation_control["pause_until"] else None,
+        "latest_data": {
+            "soil_moisture_10cm": latest_data.get("soil_moisture_10cm", 45) if latest_data else 45,
+            "soil_moisture_30cm": latest_data.get("soil_moisture_30cm", 55) if latest_data else 55,
+            "soil_moisture_60cm": latest_data.get("soil_moisture_60cm", 65) if latest_data else 65,
+            "temperature": latest_data.get("temperature", 25) if latest_data else 25,
+            "humidity": latest_data.get("humidity", 60) if latest_data else 60,
+            "pump_active": valve_state.get("is_open", False) if valve_state else False
+        } if latest_data else None
+    }
 
 
 @app.get("/history")

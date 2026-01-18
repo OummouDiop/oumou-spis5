@@ -24,10 +24,30 @@ function Dashboard() {
 
   // Fonction pour annoncer avec la voix
   const speakMessage = (message: string) => {
-    const utterance = new SpeechSynthesisUtterance(message);
-    utterance.lang = 'fr-FR';
-    window.speechSynthesis.speak(utterance);
-    console.log('🔊 Message vocal:', message);
+    if ('speechSynthesis' in window) {
+      // Annuler toute synthèse en cours
+      window.speechSynthesis.cancel();
+      
+      const utterance = new SpeechSynthesisUtterance(message);
+      utterance.lang = 'fr-FR';
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      
+      console.log('🔊 Message vocal:', message);
+      
+      utterance.onerror = (event) => {
+        console.error('❌ Erreur synthèse vocale:', event.error);
+      };
+      
+      utterance.onend = () => {
+        console.log('✅ Message vocal terminé');
+      };
+      
+      window.speechSynthesis.speak(utterance);
+    } else {
+      console.warn('⚠️ Synthèse vocale non supportée par ce navigateur');
+    }
   };
 
   // Fonction pour jouer le son d'eau en boucle
@@ -60,10 +80,14 @@ function Dashboard() {
           console.log(`🔔 Changement détecté pour ${zone.name}: ${previousState ? 'OUVERT' : 'FERMÉ'} → ${currentState ? 'OUVERT' : 'FERMÉ'}`);
           
           if (currentState) {
-            speakMessage("encour d'irrigation");
+            const message = `L'irrigation a commencé pour ${zone.name}`;
+            console.log('🔊🔊🔊 ANNONCE:', message);
+            speakMessage(message);
             playWaterSound();
           } else {
-            speakMessage("Arret de l'irrigation");
+            const message = `L'irrigation s'est arrêtée pour ${zone.name}`;
+            console.log('🔊🔊🔊 ANNONCE:', message);
+            speakMessage(message);
             stopWaterSound();
           }
         }

@@ -17,6 +17,7 @@ except Exception:
 
 # Configuration de l'API backend
 BACKEND_URL = "http://127.0.0.1:8000/send-data"
+STATUS_URL = "http://127.0.0.1:8000/simulation-status"
 
 print("🌱 SmartIrrig - Simulation avec Backend FastAPI")
 print("=" * 60)
@@ -47,6 +48,28 @@ print("🚀 Démarrage de la simulation...\n")
 try:
     while True:
         heure_actuelle = temps_simulation % 24
+        
+        # Vérifier si la simulation doit être en pause (mode manuel actif)
+        try:
+            status_response = requests.get(STATUS_URL, timeout=2)
+            if status_response.status_code == 200:
+                status = status_response.json()
+                if status.get("paused"):
+                    print(f"\n⏸️  PAUSE - Mode manuel actif")
+                    time.sleep(5)
+                    continue
+                
+                # Si on vient de reprendre, synchroniser avec les dernières données
+                if status.get("latest_data") and not irrigation_active:
+                    latest = status["latest_data"]
+                    # Mettre à jour les capteurs avec les dernières valeurs
+                    capteurs['humidite_10cm'].humidite = latest.get("soil_moisture_10cm", 45)
+                    capteurs['humidite_30cm'].humidite = latest.get("soil_moisture_30cm", 55)
+                    capteurs['humidite_60cm'].humidite = latest.get("soil_moisture_60cm", 65)
+                    irrigation_active = latest.get("pump_active", False)
+                    print(f"\n🔄 Synchronisation avec les données manuelles - Pompe: {'ON' if irrigation_active else 'OFF'}")
+        except:
+            pass  # Continuer si impossible de vérifier le statut
         
         # Vérifier s'il y a une météo forcée depuis le backend
         try:
