@@ -7,6 +7,7 @@ interface BackendSensorData {
   id: number;
   zone_id: string;
   timestamp: number;
+  simulated_hour?: number;
   moisture: number;
   temperature: number;
   humidity: number;
@@ -31,6 +32,7 @@ export async function fetchZoneHistory(zoneId: string): Promise<SensorData[]> {
     // Backend data is now in the correct format - just return it
     return backendData.map(d => ({
       timestamp: d.timestamp,
+      simulated_hour: d.simulated_hour,
       moisture: d.moisture,
       temperature: d.temperature,
       humidity: d.humidity,

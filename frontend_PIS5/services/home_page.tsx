@@ -45,9 +45,9 @@ export default function HomePage() {
           <span className="text-2xl font-bold tracking-wide text-slate-800">AGRITECH</span>
         </div>
         <div className="flex items-center gap-4">
-          <button className="hidden md:block bg-white text-green-700 px-6 py-2 rounded-full font-bold text-sm shadow-sm hover:shadow-md transition-all">
+          {/* <button className="hidden md:block bg-white text-green-700 px-6 py-2 rounded-full font-bold text-sm shadow-sm hover:shadow-md transition-all">
             Sign In
-          </button>
+          </button> */}
           <button className="md:hidden text-slate-800">
             <Menu size={28} />
           </button>

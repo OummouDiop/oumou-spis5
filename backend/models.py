@@ -30,6 +30,7 @@ class ValveState(BaseModel):
 
 class SensorDataCreate(BaseModel):
     zone_id: str = "zone-1"
+    simulated_hour: int | None = None  # Heure simulée (0-23) pour affichage circulaire
     humidity: float
     temperature: float
     soil_moisture: float

@@ -140,6 +140,7 @@ try:
         # Préparer les données COMPLÈTES pour le backend
         payload = {
             "zone_id": "zone-1",
+            "simulated_hour": int(heure_actuelle) % 24,
             "humidity": humidite_air,
             "temperature": temperature,
             "soil_moisture": humidite_10cm,

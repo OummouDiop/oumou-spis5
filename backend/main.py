@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+import sys
+import io
+# Configurer l'encodage UTF-8 pour les sorties
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import db
@@ -74,6 +81,7 @@ def receive_sensor_data(data: SensorDataCreate):
     from datetime import datetime, timedelta
     record_dict = {
         "zone_id": data.zone_id,
+        "simulated_hour": data.simulated_hour,
         "humidity": data.humidity,
         "temperature": data.temperature,
         "soil_moisture": data.soil_moisture,
@@ -154,7 +162,12 @@ def get_history(zone_id: str = None):
     if zone_id:
         query["zone_id"] = zone_id
     # Trier par created_at décroissant pour avoir les plus récents en premier
-    records = list(db["sensor_data"].find(query).sort("created_at", -1).limit(100))
+    # Limiter aux 24 derniers points pour afficher une fenêtre circulaire de 24h
+    records = list(db["sensor_data"].find(query).sort("created_at", -1).limit(24))
+    
+    # ⚠️ IMPORTANT: Inverser pour avoir l'ordre chronologique (ancien → récent)
+    records.reverse()
+    
     result = []
     for r in records:
         created_at = r.get("created_at")
@@ -176,6 +189,7 @@ def get_history(zone_id: str = None):
             "id": str(r.get("_id")),
             "zone_id": r.get("zone_id"),
             "timestamp": timestamp,
+            "simulated_hour": r.get("simulated_hour"),
             "moisture": r.get("soil_moisture"),
             "temperature": r.get("temperature"),
             "humidity": r.get("humidity"),

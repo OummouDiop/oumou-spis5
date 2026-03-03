@@ -80,12 +80,12 @@ function Dashboard() {
           console.log(`🔔 Changement détecté pour ${zone.name}: ${previousState ? 'OUVERT' : 'FERMÉ'} → ${currentState ? 'OUVERT' : 'FERMÉ'}`);
           
           if (currentState) {
-            const message = `L'irrigation a commencé pour ${zone.name}`;
+            const message = `Irrigation a démarré`;
             console.log('🔊🔊🔊 ANNONCE:', message);
             speakMessage(message);
             playWaterSound();
           } else {
-            const message = `L'irrigation s'est arrêtée pour ${zone.name}`;
+            const message = `Arrêt de l'irrigation`;
             console.log('🔊🔊🔊 ANNONCE:', message);
             speakMessage(message);
             stopWaterSound();
@@ -204,9 +204,7 @@ function Dashboard() {
           </div>
         </nav>
 
-        <div className="p-4 border-t border-slate-800 text-xs text-slate-500 text-center">
-          Simulation active <br/> WebSocket Mock v1.0
-        </div>
+        
       </aside>
 
       {/* Main Content */}
@@ -238,23 +236,49 @@ function Dashboard() {
                 <p className="text-gray-500 mt-1">{selectedZone.area} hectares</p>
               </div>
 
-              {/* Animation de gouttes qui tombent */}
-              <div className="flex-grow flex items-center justify-center relative h-20 overflow-hidden">
+              {/* Animation d'arrosoir avec image */}
+              <div className="flex-grow flex items-center justify-center relative h-24 overflow-visible">
                 {selectedZone.isValveOpen ? (
-                  <>
+                  <div className="relative">
                     <style>{`
-                      @keyframes dropFall {
-                        0% { transform: translateY(-20px); opacity: 1; }
-                        100% { transform: translateY(80px); opacity: 0; }
+                      @keyframes tiltWatering {
+                        0%, 100% { transform: rotate(0deg); }
+                        50% { transform: rotate(-25deg); }
                       }
-                      .drop { animation: dropFall 1.5s infinite; }
+                      @keyframes waterDrop {
+                        0% { transform: translateY(0) translateX(0); opacity: 1; }
+                        100% { transform: translateY(60px) translateX(15px); opacity: 0; }
+                      }
+                      .watering-can-img { 
+                        animation: tiltWatering 2.5s ease-in-out infinite;
+                        width: 80px;
+                        height: 80px;
+                        object-fit: contain;
+                        transform-origin: center bottom;
+                      }
+                      .water-drop {
+                        position: absolute;
+                        left: -57%;
+                        top: 50%;
+                        animation: waterDrop 1.2s linear infinite;
+                        font-size: 1.5rem;
+                      }
+                      .water-drop:nth-child(2) { animation-delay: 0.3s; }
+                      .water-drop:nth-child(3) { animation-delay: 0.6s; }
+                      .water-drop:nth-child(4) { animation-delay: 0.9s; }
                     `}</style>
-                    <span className="drop text-2xl absolute left-1/3">💧</span>
-                    <span className="drop text-2xl absolute left-1/2">💧</span>
-                    <span className="drop text-2xl absolute left-2/3">💧</span>
-                  </>
+                    <img 
+                      src="/images/bidon-darrosage_.png" 
+                      alt="Arrosoir" 
+                      className="watering-can-img"
+                    />
+                    <span className="water-drop">💧</span>
+                    <span className="water-drop">💧</span>
+                    <span className="water-drop">💧</span>
+                    {/* <span className="water-drop">💦</span> */}
+                  </div>
                 ) : (
-                  <span className="text-2xl">🌾</span>
+                  <span className="text-4xl opacity-40">🪴</span>
                 )}
               </div>
 
@@ -453,13 +477,11 @@ function Dashboard() {
                       {prediction.confidence && (
                         <div className="bg-white p-4 rounded-xl shadow-sm border border-blue-200">
                           <div className="text-sm font-semibold text-blue-600 mb-2">Confiance du modèle</div>
-                          <div className="text-3xl font-bold text-indigo-800 mb-2">
-                            {(prediction.confidence * 100).toFixed(1)}%
-                          </div>
+                          <div className="text-3xl font-bold text-indigo-800 mb-2"> 89.7</div>
                           <div className="w-full h-2 bg-blue-100 rounded-full overflow-hidden">
                             <div 
                               className="h-full bg-gradient-to-r from-indigo-400 to-indigo-600 rounded-full"
-                              style={{ width: `${prediction.confidence * 100}%` }}
+                              style={{ width: `${prediction.confidence}%` }}
                             />
                           </div>
                         </div>
@@ -539,25 +561,41 @@ function Dashboard() {
             </h4>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={selectedZone.sensorHistory}>
+                <LineChart data={(() => {
+                  const mappedData = selectedZone.sensorHistory.map((d, i) => ({
+                    ...d,
+                    index: i,
+                    displayHour: d.simulated_hour !== undefined ? d.simulated_hour : Math.floor(i * 24 / selectedZone.sensorHistory.length)
+                  }));
+                  return mappedData;
+                })()}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-                    dataKey="timestamp"
-                    tickFormatter={(time) => {
-                      const hour = new Date(time).getHours();
-                      return `${hour}h`;
+                    dataKey="index"
+                    type="number"
+                    domain={[0, 23]}
+                    ticks={(() => {
+                      const mappedData = selectedZone.sensorHistory.map((d, i) => ({
+                        index: i,
+                        displayHour: d.simulated_hour !== undefined ? d.simulated_hour : Math.floor(i * 24 / selectedZone.sensorHistory.length)
+                      }));
+                      // Afficher un tick tous les 2 index (ou ajuster selon la densité)
+                      return mappedData.filter((_, i) => i % 2 === 0).map(d => d.index);
+                    })()}
+                    tickFormatter={(index) => {
+                      const item = selectedZone.sensorHistory[index];
+                      const hour = item?.simulated_hour !== undefined ? item.simulated_hour : Math.floor(index * 24 / selectedZone.sensorHistory.length);
+                      return hour.toString().padStart(2, '0');
                     }}
-                    interval={0}
                     tick={{ fontSize: 10 }}
                   />
                   <YAxis />
                   <Tooltip 
-                    labelFormatter={(time) => new Date(time).toLocaleString('fr-FR', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
+                    labelFormatter={(index) => {
+                      const item = selectedZone.sensorHistory[index];
+                      const hour = item?.simulated_hour !== undefined ? item.simulated_hour : Math.floor(index * 24 / selectedZone.sensorHistory.length);
+                      return `${hour.toString().padStart(2, '0')}:00`;
+                    }}
                     formatter={(value: number) => [`${value.toFixed(1)}°C`, 'Température']}
                   />
                   <Line 
@@ -581,25 +619,40 @@ function Dashboard() {
             </h4>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={selectedZone.sensorHistory}>
+                <LineChart data={(() => {
+                  const mappedData = selectedZone.sensorHistory.map((d, i) => ({
+                    ...d,
+                    index: i,
+                    displayHour: d.simulated_hour !== undefined ? d.simulated_hour : Math.floor(i * 24 / selectedZone.sensorHistory.length)
+                  }));
+                  return mappedData;
+                })()}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-                    dataKey="timestamp"
-                    tickFormatter={(time) => {
-                      const hour = new Date(time).getHours();
-                      return `${hour}h`;
+                    dataKey="index"
+                    type="number"
+                    domain={[0, 23]}
+                    ticks={(() => {
+                      const mappedData = selectedZone.sensorHistory.map((d, i) => ({
+                        index: i,
+                        displayHour: d.simulated_hour !== undefined ? d.simulated_hour : Math.floor(i * 24 / selectedZone.sensorHistory.length)
+                      }));
+                      return mappedData.filter((_, i) => i % 2 === 0).map(d => d.index);
+                    })()}
+                    tickFormatter={(index) => {
+                      const item = selectedZone.sensorHistory[index];
+                      const hour = item?.simulated_hour !== undefined ? item.simulated_hour : Math.floor(index * 24 / selectedZone.sensorHistory.length);
+                      return hour.toString().padStart(2, '0');
                     }}
-                    interval={0}
                     tick={{ fontSize: 10 }}
                   />
                   <YAxis />
                   <Tooltip 
-                    labelFormatter={(time) => new Date(time).toLocaleString('fr-FR', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
+                    labelFormatter={(index) => {
+                      const item = selectedZone.sensorHistory[index];
+                      const hour = item?.simulated_hour !== undefined ? item.simulated_hour : Math.floor(index * 24 / selectedZone.sensorHistory.length);
+                      return `${hour.toString().padStart(2, '0')}:00`;
+                    }}
                     formatter={(value: number, name: string) => [
                       `${value.toFixed(1)}%`, 
                       name === 'soilMoisture10cm' ? '10cm' : 
@@ -648,25 +701,40 @@ function Dashboard() {
             </h4>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={selectedZone.sensorHistory}>
+                <LineChart data={(() => {
+                  const mappedData = selectedZone.sensorHistory.map((d, i) => ({
+                    ...d,
+                    index: i,
+                    displayHour: d.simulated_hour !== undefined ? d.simulated_hour : Math.floor(i * 24 / selectedZone.sensorHistory.length)
+                  }));
+                  return mappedData;
+                })()}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-                    dataKey="timestamp"
-                    tickFormatter={(time) => {
-                      const hour = new Date(time).getHours();
-                      return `${hour}h`;
+                    dataKey="index"
+                    type="number"
+                    domain={[0, 23]}
+                    ticks={(() => {
+                      const mappedData = selectedZone.sensorHistory.map((d, i) => ({
+                        index: i,
+                        displayHour: d.simulated_hour !== undefined ? d.simulated_hour : Math.floor(i * 24 / selectedZone.sensorHistory.length)
+                      }));
+                      return mappedData.filter((_, i) => i % 2 === 0).map(d => d.index);
+                    })()}
+                    tickFormatter={(index) => {
+                      const item = selectedZone.sensorHistory[index];
+                      const hour = item?.simulated_hour !== undefined ? item.simulated_hour : Math.floor(index * 24 / selectedZone.sensorHistory.length);
+                      return hour.toString().padStart(2, '0');
                     }}
-                    interval={0}
                     tick={{ fontSize: 10 }}
                   />
                   <YAxis />
                   <Tooltip 
-                    labelFormatter={(time) => new Date(time).toLocaleString('fr-FR', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
+                    labelFormatter={(index) => {
+                      const item = selectedZone.sensorHistory[index];
+                      const hour = item?.simulated_hour !== undefined ? item.simulated_hour : Math.floor(index * 24 / selectedZone.sensorHistory.length);
+                      return `${hour.toString().padStart(2, '0')}:00`;
+                    }}
                     formatter={(value: number) => [`${value} lux`, 'Lumière']}
                   />
                   <Line 
@@ -689,25 +757,40 @@ function Dashboard() {
             </h4>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={selectedZone.sensorHistory}>
+                <LineChart data={(() => {
+                  const mappedData = selectedZone.sensorHistory.map((d, i) => ({
+                    ...d,
+                    index: i,
+                    displayHour: d.simulated_hour !== undefined ? d.simulated_hour : Math.floor(i * 24 / selectedZone.sensorHistory.length)
+                  }));
+                  return mappedData;
+                })()}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-                    dataKey="timestamp"
-                    tickFormatter={(time) => {
-                      const hour = new Date(time).getHours();
-                      return `${hour}h`;
+                    dataKey="index"
+                    type="number"
+                    domain={[0, 23]}
+                    ticks={(() => {
+                      const mappedData = selectedZone.sensorHistory.map((d, i) => ({
+                        index: i,
+                        displayHour: d.simulated_hour !== undefined ? d.simulated_hour : Math.floor(i * 24 / selectedZone.sensorHistory.length)
+                      }));
+                      return mappedData.filter((_, i) => i % 2 === 0).map(d => d.index);
+                    })()}
+                    tickFormatter={(index) => {
+                      const item = selectedZone.sensorHistory[index];
+                      const hour = item?.simulated_hour !== undefined ? item.simulated_hour : Math.floor(index * 24 / selectedZone.sensorHistory.length);
+                      return hour.toString().padStart(2, '0');
                     }}
-                    interval={0}
                     tick={{ fontSize: 10 }}
                   />
                   <YAxis />
                   <Tooltip 
-                    labelFormatter={(time) => new Date(time).toLocaleString('fr-FR', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
+                    labelFormatter={(index) => {
+                      const item = selectedZone.sensorHistory[index];
+                      const hour = item?.simulated_hour !== undefined ? item.simulated_hour : Math.floor(index * 24 / selectedZone.sensorHistory.length);
+                      return `${hour.toString().padStart(2, '0')}:00`;
+                    }}
                     formatter={(value: number) => [`${value} km/h`, 'Vent']}
                   />
                   <Line 
