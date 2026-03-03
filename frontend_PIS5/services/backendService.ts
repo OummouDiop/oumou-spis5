@@ -11,7 +11,7 @@ class BackendService {
   private listeners: Listener[] = [];
   private intervalId: number | null = null;
   private isRunning = false;
-  private pollRate = 3000; // Poll backend every 3 seconds
+  private pollRate = 1000; // Poll backend every 1 second for real-time updates
 
   constructor() {
     this.initializeZones();
@@ -68,13 +68,15 @@ class BackendService {
           // Update zone with backend data
           // IMPORTANT: history[0] est le plus récent (ordre décroissant du backend)
           const currentReading = history[0];
-          console.log('📡 [BackendService] Latest reading:', {
+          const age = Date.now() - currentReading.timestamp;
+          console.log('📡 [BackendService] Latest reading (age: ' + Math.round(age/1000) + 's):', {
             temp: currentReading.temperature,
             humidity: currentReading.humidity,
             soil10: currentReading.soilMoisture10cm,
             soil30: currentReading.soilMoisture30cm,
             soil60: currentReading.soilMoisture60cm,
-            timestamp: new Date(currentReading.timestamp).toLocaleTimeString()
+            timestamp: new Date(currentReading.timestamp).toLocaleTimeString(),
+            valveOpen: isValveOpen
           });
           
           // Determine status based on moisture
@@ -98,8 +100,8 @@ class BackendService {
           if (zoneIndex !== -1) {
             const updatedZone = {
               ...this.zones[zoneIndex],
-              currentReading,
-              sensorHistory: history.reverse(), // Inverser pour avoir du plus ancien au plus récent
+              currentReading, // history[0] est maintenant le plus récent (ordre décroissant)
+              sensorHistory: [...history].reverse(), // Inverser pour graphiques (ancien → récent)
               status,
               isValveOpen  // Ajouter l'état de la valve
             };

@@ -223,6 +223,14 @@ function Dashboard() {
                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
                 <span className="text-sm font-medium text-gray-600">Système en ligne</span>
              </div>
+             {selectedZone && (
+               <div className="bg-blue-50 px-4 py-2 rounded-lg shadow-sm border border-blue-100 flex items-center gap-2">
+                 <Clock size={16} className="text-blue-600"/>
+                 <span className="text-sm font-medium text-blue-700">
+                   {new Date(selectedZone.currentReading.timestamp).toLocaleTimeString('fr-FR')}
+                 </span>
+               </div>
+             )}
           </div>
         </header>
 

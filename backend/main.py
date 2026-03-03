@@ -171,8 +171,9 @@ def get_history(zone_id: str = None):
     # Limiter aux 24 derniers points pour afficher une fenêtre circulaire de 24h
     records = list(db["sensor_data"].find(query).sort("created_at", -1).limit(24))
     
-    # ⚠️ IMPORTANT: Inverser pour avoir l'ordre chronologique (ancien → récent)
-    records.reverse()
+    # ⚠️ CORRECTION: NE PAS inverser - garder l'ordre décroissant
+    # Le frontend s'attend à ce que history[0] soit le plus récent
+    # Les graphiques peuvent s'adapter avec history.reverse() si besoin
     
     result = []
     for r in records:
