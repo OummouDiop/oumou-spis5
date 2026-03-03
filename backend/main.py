@@ -49,7 +49,12 @@ app = FastAPI()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"],
+    allow_origins=[
+        "http://localhost:3000", "http://127.0.0.1:3000",
+        "http://localhost:3001", "http://127.0.0.1:3001",
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:5174", "http://127.0.0.1:5174"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -130,7 +135,8 @@ def get_simulation_status():
             simulation_control["pause_until"] = None
     
     # Récupérer les dernières données pour synchroniser la simulation
-    latest_data = db["sensor_data"].find_one(sort=[("created_at", -1)])
+    latest_data_cursor = list(db["sensor_data"].find().sort("created_at", -1).limit(1))
+    latest_data = latest_data_cursor[0] if latest_data_cursor else None
     valve_state = db["valve_states"].find_one({"zone_id": "zone-1"})
     
     return {

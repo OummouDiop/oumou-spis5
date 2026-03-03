@@ -25,7 +25,7 @@ class BackendService {
         id: 'zone-1',
         name: 'Champ Principal',
         cropType: CropType.CORN,
-        area: 12.5,
+        area: 0,
         isValveOpen: false,
         sensorHistory: [],
         currentReading: {

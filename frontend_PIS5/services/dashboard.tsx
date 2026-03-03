@@ -204,9 +204,9 @@ function Dashboard() {
           </div>
         </nav>
 
-        <div className="p-4 border-t border-slate-800 text-xs text-slate-500 text-center">
+        {/* <div className="p-4 border-t border-slate-800 text-xs text-slate-500 text-center">
           Simulation active <br/> WebSocket Mock v1.0
-        </div>
+        </div> */}
       </aside>
 
       {/* Main Content */}
