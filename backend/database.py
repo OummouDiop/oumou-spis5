@@ -19,7 +19,23 @@ class InMemoryCollection:
         self.data.append(document.copy())
         return type('InsertResult', (), {'inserted_id': len(self.data) - 1})()
     
-    def find_one(self, query: Dict[str, Any]):
+    def find_one(self, query: Dict[str, Any] = None, sort: List[tuple] = None):
+        """
+        Trouve un document. Supporte le tri avec sort=[("field", 1 ou -1)]
+        """
+        if query is None:
+            query = {}
+        
+        # Si sort est spécifié, utiliser find().sort().limit(1)
+        if sort:
+            cursor = self.find(query)
+            for field, direction in sort:
+                cursor = cursor.sort(field, direction)
+            cursor = cursor.limit(1)
+            results = list(cursor)
+            return results[0] if results else None
+        
+        # Sinon, recherche simple
         for doc in reversed(self.data):
             match = all(doc.get(k) == v for k, v in query.items())
             if match:

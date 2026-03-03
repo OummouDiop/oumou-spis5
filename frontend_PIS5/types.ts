@@ -7,6 +7,7 @@ export enum CropType {
 
 export interface SensorData {
   timestamp: number;
+  simulated_hour?: number; // Heure simulée (0-23) pour affichage circulaire 24h
   moisture: number; // %
   temperature: number; // Celsius
   humidity: number; // %
