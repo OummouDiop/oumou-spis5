@@ -137,10 +137,6 @@ function Dashboard({ onNavigate }: DashboardProps) {
     backendService.toggleValve(id);
   };
 
-  const handleWeatherChange = (condition: 'Sunny' | 'Cloudy' | 'Rainy') => {
-    backendService.setWeather(condition);
-  };
-
   // Version de test - affiche le dashboard même sans données
   if (zones.length === 0) {
     return (
@@ -243,25 +239,28 @@ function Dashboard({ onNavigate }: DashboardProps) {
               <p className="text-gray-600 mt-1">Gérez votre système d'irrigation intelligent</p>
             </div>
             
-            {/* Weather Controls */}
+            {/* Weather Indicators */}
             <div className="flex gap-2">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200">
+                <span className="text-xs font-semibold text-slate-600">MÉTÉO AUTO</span>
+              </div>
               {(['Sunny', 'Cloudy', 'Rainy'] as const).map((condition) => {
                 const Icon = condition === 'Sunny' ? Sun : condition === 'Cloudy' ? Cloud : CloudRain;
                 const isActive = weather.condition === condition;
                 
                 return (
-                  <button
+                  <div
                     key={condition}
-                    onClick={() => handleWeatherChange(condition)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium ${
                       isActive 
                         ? 'bg-blue-500 text-white' 
-                        : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                        : 'bg-white text-gray-400 border border-gray-200 opacity-50'
                     }`}
                   >
                     <Icon className="w-4 h-4" />
                     {condition === 'Sunny' ? 'Ensoleillé' : condition === 'Cloudy' ? 'Nuageux' : 'Pluvieux'}
-                  </button>
+                    {isActive && ' ✓'}
+                  </div>
                 );
               })}
             </div>

@@ -150,3 +150,71 @@ class CapteurDebitEau:
         return round(debit, 1), round(self.eau_totale_utilisee, 1)
 
 
+class ReservoirEau:
+    """Réservoir d'eau avec gestion du niveau et alertes"""
+    def __init__(self, capacite_max=10000):
+        self.capacite_max = capacite_max  # Litres
+        self.niveau_actuel = capacite_max * 0.75  # Commence à 75%
+        self.seuil_alerte = capacite_max * 0.20  # Alerte à 20%
+        self.seuil_critique = capacite_max * 0.10  # Critique à 10%
+        
+    def consommer(self, debit):
+        """
+        Consomme de l'eau du réservoir
+        debit: litres par minute
+        """
+        self.niveau_actuel = max(0, self.niveau_actuel - debit)
+        
+    def remplir(self, pleut, intensite_pluie='none'):
+        """
+        Remplit le réservoir avec l'eau de pluie
+        """
+        if pleut:
+            # Remplissage selon l'intensité de la pluie (litres/min collectés)
+            taux_remplissage = {
+                'light': 5,      # 5 L/min
+                'moderate': 15,  # 15 L/min
+                'heavy': 30      # 30 L/min
+            }.get(intensite_pluie, 10)
+            
+            self.niveau_actuel = min(self.capacite_max, self.niveau_actuel + taux_remplissage)
+    
+    def get_niveau_pourcent(self):
+        """Retourne le niveau en pourcentage"""
+        return round((self.niveau_actuel / self.capacite_max) * 100, 1)
+    
+    def get_statut(self):
+        """Retourne le statut du réservoir"""
+        niveau_pct = self.get_niveau_pourcent()
+        
+        if niveau_pct <= (self.seuil_critique / self.capacite_max * 100):
+            return 'CRITIQUE'
+        elif niveau_pct <= (self.seuil_alerte / self.capacite_max * 100):
+            return 'ALERTE'
+        elif niveau_pct >= 80:
+            return 'OPTIMAL'
+        else:
+            return 'NORMAL'
+    
+    def get_info(self):
+        """Retourne toutes les informations du réservoir"""
+        return {
+            'niveau_litres': round(self.niveau_actuel, 1),
+            'niveau_pourcent': self.get_niveau_pourcent(),
+            'capacite_max': self.capacite_max,
+            'statut': self.get_statut(),
+            'autonomie_estimee': self.estimer_autonomie()
+        }
+    
+    def estimer_autonomie(self):
+        """Estime l'autonomie en heures si irrigation continue"""
+        # Débit moyen d'irrigation: ~8 L/min
+        debit_moyen = 8.0
+        if debit_moyen > 0:
+            minutes = self.niveau_actuel / debit_moyen
+            heures = round(minutes / 60, 1)
+            return heures
+        return 999  # Autonomie infinie si pas d'irrigation
+
+
+

@@ -2,7 +2,7 @@ import time
 import requests
 import random
 import math
-from sensors import CapteurHumidite, CapteurTemperature, CapteurLumiere, CapteurPluie, CapteurVent, CapteurDebitEau
+from sensors import CapteurHumidite, CapteurTemperature, CapteurLumiere, CapteurPluie, CapteurVent, CapteurDebitEau, ReservoirEau
 from config import CONFIG_SIMULATION, CONFIG_CAPTEURS
 
 # Forcer l'encodage UTF-8 pour stdout/stderr (utile sous Windows)
@@ -18,6 +18,7 @@ except Exception:
 # Configuration de l'API backend
 BACKEND_URL = "http://127.0.0.1:8000/send-data"
 STATUS_URL = "http://127.0.0.1:8000/simulation-status"
+RESERVOIR_URL = "http://127.0.0.1:8000/update-reservoir"
 
 print("🌱 SmartIrrig - Simulation avec Backend FastAPI")
 print("=" * 60)
@@ -35,6 +36,9 @@ capteurs = {
     'vent': CapteurVent(),
     'debit_eau': CapteurDebitEau()
 }
+
+# Initialiser le réservoir d'eau (10000 litres)
+reservoir = ReservoirEau(capacite_max=10000)
 
 # Variables de simulation
 temps_simulation = 0
@@ -165,6 +169,32 @@ try:
         print(f"🌬️  Vent: {vitesse_vent} km/h")
         print(f"🌧️  Pluie: {'Oui (' + str(intensite_pluie) + ')' if pleut else 'Non'}")
         
+        # Gestion du réservoir d'eau
+        debit, eau_totale = capteurs['debit_eau'].simuler(irrigation_active)
+        
+        # Consommer de l'eau si irrigation active
+        if irrigation_active and debit > 0:
+            reservoir.consommer(debit)
+        
+        # Remplir avec la pluie
+        if pleut:
+            reservoir.remplir(pleut, intensite_pluie_str)
+        
+        # Afficher l'état du réservoir
+        info_reservoir = reservoir.get_info()
+        statut_emoji = {
+            'OPTIMAL': '🟢',
+            'NORMAL': '🟡',
+            'ALERTE': '🟠',
+            'CRITIQUE': '🔴'
+        }.get(info_reservoir['statut'], '⚪')
+        
+        print(f"\n💧 Réservoir: {statut_emoji} {info_reservoir['niveau_litres']}L ({info_reservoir['niveau_pourcent']}%)")
+        print(f"   Statut: {info_reservoir['statut']} | Autonomie: {info_reservoir['autonomie_estimee']}h")
+        
+        if info_reservoir['statut'] in ['ALERTE', 'CRITIQUE']:
+            print(f"   ⚠️  ALERTE: Niveau d'eau {'critique' if info_reservoir['statut'] == 'CRITIQUE' else 'bas'} !")
+        
         # Envoi au backend
         try:
             print(f"\n📤 Envoi #{compteur_envois + 1} vers le backend...")
@@ -180,6 +210,14 @@ try:
                 irrigation_active = decision['pump']
                 
                 compteur_envois += 1
+                
+                # Envoyer l'état du réservoir au backend
+                try:
+                    reservoir_payload = info_reservoir
+                    requests.post(RESERVOIR_URL, json=reservoir_payload, timeout=2)
+                except:
+                    pass  # Ne pas bloquer si la route n'existe pas encore
+                
             else:
                 print(f"⚠️  Erreur HTTP {response.status_code}: {response.text}")
                 

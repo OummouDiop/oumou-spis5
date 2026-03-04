@@ -6,7 +6,7 @@ import { Zone, WeatherCondition } from '../types';
 import { 
   CloudRain, Sun, Cloud, LayoutDashboard, Settings, 
   Droplet, Activity, Power, ArrowLeft, Clock, Thermometer,
-  Beaker, Sprout, Lightbulb, Wind, CloudDrizzle
+  Beaker, Sprout, Lightbulb, Wind, CloudDrizzle, Edit3, X
 } from 'lucide-react';
 
 function Dashboard() {
@@ -15,6 +15,30 @@ function Dashboard() {
   const [weather, setWeather] = useState<WeatherCondition>({ condition: 'Sunny', ambientTemp: 25 });
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [prediction, setPrediction] = useState<{ prediction: number | null; error: string | null; confidence: number | null } | null>(null);
+  
+  // État du réservoir d'eau
+  const [reservoir, setReservoir] = useState<{
+    niveau_litres: number;
+    niveau_pourcent: number;
+    capacite_max: number;
+    statut: 'OPTIMAL' | 'NORMAL' | 'ALERTE' | 'CRITIQUE';
+    autonomie_estimee: number;
+    message?: string;
+  } | null>(null);
+  
+  // État du modal de simulation manuelle
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [manualData, setManualData] = useState({
+    temperature: 25,
+    humidity: 60,
+    soil_moisture_10cm: 45,
+    soil_moisture_30cm: 55,
+    soil_moisture_60cm: 65,
+    light: 50000,
+    wind_speed: 10,
+    rainfall: false,
+    rainfall_intensity: 'none' as 'none' | 'light' | 'moderate' | 'heavy'
+  });
   
   // Référence pour suivre l'état précédent des valves
   const previousValveStatesRef = useRef<Map<string, boolean>>(new Map());
@@ -123,14 +147,68 @@ function Dashboard() {
     }
   }, [selectedZoneId]);
 
+  // Récupérer l'état du réservoir
+  useEffect(() => {
+    const fetchReservoir = async () => {
+      try {
+        const response = await fetch('http://127.0.0.1:8000/reservoir');
+        if (response.ok) {
+          const data = await response.json();
+          setReservoir(data);
+        }
+      } catch (error) {
+        console.error('Erreur récupération réservoir:', error);
+      }
+    };
+    
+    fetchReservoir();
+    // Mettre à jour toutes les 2 secondes
+    const reservoirInterval = setInterval(fetchReservoir, 2000);
+    return () => clearInterval(reservoirInterval);
+  }, []);
+
   const selectedZone = zones.find(z => z.id === selectedZoneId) || zones[0];
 
   const handleValveToggle = (id: string) => {
     backendService.toggleValve(id);
   };
 
-  const handleWeatherChange = (condition: 'Sunny' | 'Cloudy' | 'Rainy') => {
-    backendService.setWeather(condition);
+  const handleManualSubmit = async () => {
+    try {
+      // Calculer soil_moisture comme moyenne des trois profondeurs
+      const soil_moisture = (
+        manualData.soil_moisture_10cm + 
+        manualData.soil_moisture_30cm + 
+        manualData.soil_moisture_60cm
+      ) / 3;
+
+      const dataToSend = {
+        ...manualData,
+        soil_moisture,
+        zone_id: selectedZoneId || 'zone-1',
+        pump_was_active: false,
+      };
+
+      const response = await fetch('http://127.0.0.1:8000/send-manual-data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(dataToSend),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Décision d\'irrigation:', result);
+        alert(`Données envoyées avec succès!\n\nDécision: ${result.decision}\nÉtat irrigation: ${result.irrigation_active ? '✅ ACTIVÉE' : '❌ DÉSACTIVÉE'}\n\nHumidité sol moyenne: ${soil_moisture.toFixed(1)}%`);
+        setShowManualModal(false);
+      } else {
+        alert('Erreur lors de l\'envoi des données');
+      }
+    } catch (error) {
+      console.error('Erreur:', error);
+      alert('Erreur de connexion au backend');
+    }
   };
 
   // Safe check for loading state
@@ -179,28 +257,33 @@ function Dashboard() {
             <LayoutDashboard size={20} />
             <span className="font-medium">Tableau de bord</span>
           </button>
+          <button 
+            onClick={() => setShowManualModal(true)}
+            className="w-full flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 rounded-lg text-white shadow-lg transition-all"
+          >
+            <Edit3 size={20} />
+            <span className="font-medium">Simulation Manuelle</span>
+          </button>
           <div className="pt-4 pb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider px-4">
-            Contrôle Simulation
+            Météo Actuelle
+            <span className="ml-2 text-[10px] bg-slate-800 px-2 py-0.5 rounded-full">Auto</span>
           </div>
           <div className="space-y-1 px-2">
-             <button 
-                onClick={() => handleWeatherChange('Sunny')}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${weather.condition === 'Sunny' ? 'bg-slate-800 text-yellow-400' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+             <div 
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md ${weather.condition === 'Sunny' ? 'bg-slate-800 text-yellow-400' : 'text-slate-600 opacity-50'}`}
              >
-               <Sun size={18} /> Soleil
-             </button>
-             <button 
-                onClick={() => handleWeatherChange('Cloudy')}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${weather.condition === 'Cloudy' ? 'bg-slate-800 text-gray-300' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+               <Sun size={18} /> Soleil {weather.condition === 'Sunny' && '✓'}
+             </div>
+             <div 
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md ${weather.condition === 'Cloudy' ? 'bg-slate-800 text-gray-300' : 'text-slate-600 opacity-50'}`}
              >
-               <Cloud size={18} /> Nuageux
-             </button>
-             <button 
-                onClick={() => handleWeatherChange('Rainy')}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${weather.condition === 'Rainy' ? 'bg-slate-800 text-blue-400' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+               <Cloud size={18} /> Nuageux {weather.condition === 'Cloudy' && '✓'}
+             </div>
+             <div 
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md ${weather.condition === 'Rainy' ? 'bg-slate-800 text-blue-400' : 'text-slate-600 opacity-50'}`}
              >
-               <CloudRain size={18} /> Pluie
-             </button>
+               <CloudRain size={18} /> Pluie {weather.condition === 'Rainy' && '✓'}
+             </div>
           </div>
         </nav>
 
@@ -233,6 +316,96 @@ function Dashboard() {
              )}
           </div>
         </header>
+
+        {/* Réservoir d'eau */}
+        {reservoir && (
+          <section className="mb-8">
+            <div className={`rounded-xl shadow-lg border-2 p-6 transition-all ${
+              reservoir.statut === 'CRITIQUE' ? 'bg-red-50 border-red-500' :
+              reservoir.statut === 'ALERTE' ? 'bg-orange-50 border-orange-400' :
+              reservoir.statut === 'OPTIMAL' ? 'bg-green-50 border-green-400' :
+              'bg-blue-50 border-blue-300'
+            }`}>
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                
+                {/* Titre et statut */}
+                <div className="flex items-center gap-4">
+                  <div className="bg-white p-3 rounded-xl shadow-md">
+                    <Droplet size={32} className={
+                      reservoir.statut === 'CRITIQUE' ? 'text-red-600' :
+                      reservoir.statut === 'ALERTE' ? 'text-orange-500' :
+                      reservoir.statut === 'OPTIMAL' ? 'text-green-600' :
+                      'text-blue-600'
+                    } />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                      Réservoir d'eau
+                      {reservoir.statut === 'CRITIQUE' && <span className="text-red-600 animate-pulse">🔴</span>}
+                      {reservoir.statut === 'ALERTE' && <span className="text-orange-500 animate-pulse">🟠</span>}
+                      {reservoir.statut === 'OPTIMAL' && <span className="text-green-600">🟢</span>}
+                    </h3>
+                    <p className="text-gray-600 text-sm mt-1">
+                      {reservoir.niveau_litres.toFixed(0)} L / {reservoir.capacite_max} L
+                    </p>
+                  </div>
+                </div>
+
+                {/* Indicateurs */}
+                <div className="flex flex-wrap gap-4">
+                  <div className="bg-white px-4 py-3 rounded-lg shadow-sm">
+                    <div className="text-xs text-gray-500 mb-1">Niveau</div>
+                    <div className="text-2xl font-bold text-gray-800">{reservoir.niveau_pourcent.toFixed(1)}%</div>
+                  </div>
+                  <div className="bg-white px-4 py-3 rounded-lg shadow-sm">
+                    <div className="text-xs text-gray-500 mb-1">Autonomie</div>
+                    <div className="text-2xl font-bold text-gray-800">{reservoir.autonomie_estimee.toFixed(1)}h</div>
+                  </div>
+                  <div className={`px-4 py-3 rounded-lg shadow-sm font-bold ${
+                    reservoir.statut === 'CRITIQUE' ? 'bg-red-600 text-white' :
+                    reservoir.statut === 'ALERTE' ? 'bg-orange-500 text-white' :
+                    reservoir.statut === 'OPTIMAL' ? 'bg-green-600 text-white' :
+                    'bg-blue-600 text-white'
+                  }`}>
+                    <div className="text-xs opacity-90 mb-1">Statut</div>
+                    <div className="text-xl">{reservoir.statut}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Barre de progression */}
+              <div className="mt-4">
+                <div className="w-full h-6 bg-gray-200 rounded-full overflow-hidden border-2 border-gray-300">
+                  <div 
+                    className={`h-full flex items-center justify-center text-white text-xs font-bold transition-all duration-500 ${
+                      reservoir.statut === 'CRITIQUE' ? 'bg-gradient-to-r from-red-600 to-red-700' :
+                      reservoir.statut === 'ALERTE' ? 'bg-gradient-to-r from-orange-500 to-orange-600' :
+                      reservoir.statut === 'OPTIMAL' ? 'bg-gradient-to-r from-green-500 to-green-600' :
+                      'bg-gradient-to-r from-blue-500 to-blue-600'
+                    }`}
+                    style={{ width: `${reservoir.niveau_pourcent}%` }}
+                  >
+                    {reservoir.niveau_pourcent >= 20 && `${reservoir.niveau_pourcent.toFixed(1)}%`}
+                  </div>
+                </div>
+              </div>
+
+              {/* Message d'alerte */}
+              {reservoir.message && (reservoir.statut === 'ALERTE' || reservoir.statut === 'CRITIQUE') && (
+                <div className={`mt-4 px-4 py-3 rounded-lg flex items-start gap-3 ${
+                  reservoir.statut === 'CRITIQUE' ? 'bg-red-100 border-2 border-red-500' : 'bg-orange-100 border-2 border-orange-400'
+                }`}>
+                  <span className="text-2xl">{reservoir.statut === 'CRITIQUE' ? '🚨' : '⚠️'}</span>
+                  <p className={`font-medium ${
+                    reservoir.statut === 'CRITIQUE' ? 'text-red-800' : 'text-orange-800'
+                  }`}>
+                    {reservoir.message}
+                  </p>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Champ Principal */}
         <section className="mb-8">
@@ -817,6 +990,194 @@ function Dashboard() {
 
         </section>
       </main>
+
+      {/* Modal de Simulation Manuelle */}
+      {showManualModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gradient-to-r from-purple-600 to-blue-600 text-white p-6 flex justify-between items-center">
+              <div>
+                <h3 className="text-2xl font-bold flex items-center gap-2">
+                  <Edit3 size={24} />
+                  Simulation Manuelle
+                </h3>
+                <p className="text-purple-100 text-sm mt-1">Saisir les données des capteurs manuellement</p>
+              </div>
+              <button 
+                onClick={() => setShowManualModal(false)}
+                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Section Température et Humidité */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                    <Thermometer size={18} className="text-red-500" />
+                    Température (°C)
+                  </label>
+                  <input 
+                    type="number" 
+                    value={manualData.temperature}
+                    onChange={(e) => setManualData({...manualData, temperature: parseFloat(e.target.value)})}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    step="0.1"
+                  />
+                </div>
+
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                    <Droplet size={18} className="text-blue-500" />
+                    Humidité de l'air (%)
+                  </label>
+                  <input 
+                    type="number" 
+                    value={manualData.humidity}
+                    onChange={(e) => setManualData({...manualData, humidity: parseFloat(e.target.value)})}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    step="0.1"
+                    min="0"
+                    max="100"
+                  />
+                </div>
+              </div>
+
+              {/* Section Humidité du sol */}
+              <div>
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
+                  <Sprout size={18} className="text-green-500" />
+                  Humidité du Sol (%)
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-xs text-gray-600 mb-1 block">10 cm profondeur</label>
+                    <input 
+                      type="number" 
+                      value={manualData.soil_moisture_10cm}
+                      onChange={(e) => setManualData({...manualData, soil_moisture_10cm: parseFloat(e.target.value)})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                      step="0.1"
+                      min="0"
+                      max="100"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-600 mb-1 block">30 cm profondeur</label>
+                    <input 
+                      type="number" 
+                      value={manualData.soil_moisture_30cm}
+                      onChange={(e) => setManualData({...manualData, soil_moisture_30cm: parseFloat(e.target.value)})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                      step="0.1"
+                      min="0"
+                      max="100"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-600 mb-1 block">60 cm profondeur</label>
+                    <input 
+                      type="number" 
+                      value={manualData.soil_moisture_60cm}
+                      onChange={(e) => setManualData({...manualData, soil_moisture_60cm: parseFloat(e.target.value)})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                      step="0.1"
+                      min="0"
+                      max="100"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section Lumière et Vent */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                    <Lightbulb size={18} className="text-yellow-500" />
+                    Lumière (lux)
+                  </label>
+                  <input 
+                    type="number" 
+                    value={manualData.light}
+                    onChange={(e) => setManualData({...manualData, light: parseFloat(e.target.value)})}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    step="1000"
+                    min="0"
+                  />
+                </div>
+
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                    <Wind size={18} className="text-cyan-500" />
+                    Vitesse du vent (km/h)
+                  </label>
+                  <input 
+                    type="number" 
+                    value={manualData.wind_speed}
+                    onChange={(e) => setManualData({...manualData, wind_speed: parseFloat(e.target.value)})}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    step="1"
+                    min="0"
+                  />
+                </div>
+              </div>
+
+              {/* Section Pluie */}
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
+                  <CloudDrizzle size={18} className="text-blue-600" />
+                  Conditions de Pluie
+                </label>
+                <div className="space-y-3">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={manualData.rainfall}
+                      onChange={(e) => setManualData({...manualData, rainfall: e.target.checked})}
+                      className="w-5 h-5 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Il pleut actuellement</span>
+                  </label>
+
+                  {manualData.rainfall && (
+                    <div>
+                      <label className="text-xs text-gray-600 mb-2 block">Intensité de la pluie</label>
+                      <select 
+                        value={manualData.rainfall_intensity}
+                        onChange={(e) => setManualData({...manualData, rainfall_intensity: e.target.value as any})}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      >
+                        <option value="none">Aucune</option>
+                        <option value="light">Légère</option>
+                        <option value="moderate">Modérée</option>
+                        <option value="heavy">Forte</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Boutons d'action */}
+              <div className="flex gap-3 pt-4 border-t border-gray-200">
+                <button 
+                  onClick={() => setShowManualModal(false)}
+                  className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                >
+                  Annuler
+                </button>
+                <button 
+                  onClick={handleManualSubmit}
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all font-medium shadow-lg"
+                >
+                  Envoyer les données
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Élément audio caché pour le son d'eau */}
       <audio 

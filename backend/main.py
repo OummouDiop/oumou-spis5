@@ -8,7 +8,7 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import db
-from models import SensorData, SensorDataCreate, IrrigationDecision, ValveState, ValveToggleRequest, ValveToggleResponse
+from models import SensorData, SensorDataCreate, IrrigationDecision, ValveState, ValveToggleRequest, ValveToggleResponse, ReservoirData, ReservoirResponse
 from irrigation_logic import irrigation_decision
 import joblib
 import numpy as np
@@ -372,4 +372,69 @@ def predict_soil_moisture(zone_id: str):
     Utilise les 5 derniers points (24h d'historique).
     """
     return get_soil_moisture_prediction(zone_id)
+
+
+# Routes pour le réservoir d'eau
+@app.post("/update-reservoir")
+def update_reservoir(data: ReservoirData):
+    """
+    Met à jour l'état du réservoir d'eau
+    """
+    reservoir_doc = {
+        "niveau_litres": data.niveau_litres,
+        "niveau_pourcent": data.niveau_pourcent,
+        "capacite_max": data.capacite_max,
+        "statut": data.statut,
+        "autonomie_estimee": data.autonomie_estimee,
+        "updated_at": datetime.utcnow()
+    }
+    
+    # Upsert: mettre à jour ou créer si n'existe pas
+    db["reservoir"].update_one(
+        {},  # Pas de filtre, un seul réservoir
+        {"$set": reservoir_doc},
+        upsert=True
+    )
+    
+    return {"message": "Réservoir mis à jour", "statut": data.statut}
+
+
+@app.get("/reservoir", response_model=ReservoirResponse)
+def get_reservoir():
+    """
+    Récupère l'état actuel du réservoir d'eau
+    """
+    reservoir = db["reservoir"].find_one()
+    
+    if not reservoir:
+        # Valeurs par défaut si aucune donnée
+        return ReservoirResponse(
+            niveau_litres=7500.0,
+            niveau_pourcent=75.0,
+            capacite_max=10000.0,
+            statut="NORMAL",
+            autonomie_estimee=15.6,
+            message="Aucune donnée de réservoir disponible"
+        )
+    
+    # Générer un message selon le statut
+    message = ""
+    if reservoir['statut'] == 'CRITIQUE':
+        message = "⚠️ ALERTE CRITIQUE: Niveau d'eau très bas ! Remplissage urgent nécessaire."
+    elif reservoir['statut'] == 'ALERTE':
+        message = "⚠️ Niveau d'eau bas. Envisagez un remplissage prochainement."
+    elif reservoir['statut'] == 'OPTIMAL':
+        message = "✅ Niveau d'eau optimal."
+    else:
+        message = "Niveau d'eau normal."
+    
+    return ReservoirResponse(
+        niveau_litres=reservoir.get('niveau_litres', 0),
+        niveau_pourcent=reservoir.get('niveau_pourcent', 0),
+        capacite_max=reservoir.get('capacite_max', 10000),
+        statut=reservoir.get('statut', 'NORMAL'),
+        autonomie_estimee=reservoir.get('autonomie_estimee', 0),
+        message=message
+    )
+
 

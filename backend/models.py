@@ -74,3 +74,22 @@ class ValveToggleResponse(BaseModel):
     zone_id: str
     valve_open: bool
     message: str
+
+class ReservoirData(BaseModel):
+    """Données du réservoir d'eau"""
+    niveau_litres: float
+    niveau_pourcent: float
+    capacite_max: float
+    statut: Literal['OPTIMAL', 'NORMAL', 'ALERTE', 'CRITIQUE']
+    autonomie_estimee: float  # heures
+    timestamp: Optional[datetime] = None
+
+class ReservoirResponse(BaseModel):
+    """Réponse de l'état du réservoir"""
+    niveau_litres: float
+    niveau_pourcent: float
+    capacite_max: float
+    statut: str
+    autonomie_estimee: float
+    message: Optional[str] = None
+
