@@ -124,7 +124,7 @@ def receive_manual_data(data: SensorDataCreate):
     # Activer le mode manuel et mettre en pause pendant 1 minute
     simulation_control["manual_mode"] = True
     simulation_control["paused"] = True
-    simulation_control["pause_until"] = datetime.utcnow() + timedelta(seconds=60)
+    simulation_control["pause_until"] = datetime.utcnow() + timedelta(seconds=30)
     
     # Traiter les données manuelles
     return receive_sensor_data(data)
@@ -157,6 +157,11 @@ def get_simulation_status():
             "soil_moisture_60cm": latest_data.get("soil_moisture_60cm", 65) if latest_data else 65,
             "temperature": latest_data.get("temperature", 25) if latest_data else 25,
             "humidity": latest_data.get("humidity", 60) if latest_data else 60,
+            "light": latest_data.get("light", 50000) if latest_data else 50000,
+            "wind_speed": latest_data.get("wind_speed", 10) if latest_data else 10,
+            "rainfall": latest_data.get("rainfall", False) if latest_data else False,
+            "rainfall_intensity": latest_data.get("rainfall_intensity", "none") if latest_data else "none",
+            "simulated_hour": latest_data.get("simulated_hour") if latest_data else None,
             "pump_active": valve_state.get("is_open", False) if valve_state else False
         } if latest_data else None
     }

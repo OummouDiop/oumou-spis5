@@ -45,6 +45,8 @@ temps_simulation = 0
 saison = CONFIG_SIMULATION['saison']
 compteur_envois = 0
 irrigation_active = False  # État de la pompe
+was_paused = False  # Pour détecter la reprise après pause
+manual_data_cache = None  # Cache des données manuelles à utiliser au premier cycle après reprise
 
 print("✅ Capteurs initialisés!")
 print("🚀 Démarrage de la simulation...\n")
@@ -60,86 +62,127 @@ try:
                 status = status_response.json()
                 if status.get("paused"):
                     print(f"\n⏸️  PAUSE - Mode manuel actif")
+                    was_paused = True
                     time.sleep(5)
                     continue
                 
-                # Si on vient de reprendre, synchroniser avec les dernières données
-                if status.get("latest_data") and not irrigation_active:
-                    latest = status["latest_data"]
-                    # Mettre à jour les capteurs avec les dernières valeurs
-                    capteurs['humidite_10cm'].humidite = latest.get("soil_moisture_10cm", 45)
-                    capteurs['humidite_30cm'].humidite = latest.get("soil_moisture_30cm", 55)
-                    capteurs['humidite_60cm'].humidite = latest.get("soil_moisture_60cm", 65)
-                    irrigation_active = latest.get("pump_active", False)
-                    print(f"\n🔄 Synchronisation avec les données manuelles - Pompe: {'ON' if irrigation_active else 'OFF'}")
+                # Si on vient de reprendre après une pause manuelle, préparer les données
+                if was_paused and status.get("latest_data"):
+                    manual_data_cache = status["latest_data"]
+                    was_paused = False  # Réinitialiser le flag
+                    print(f"\n🔄 Reprise après simulation manuelle - Utilisation des données saisies...")
         except:
             pass  # Continuer si impossible de vérifier le statut
         
-        # Vérifier s'il y a une météo forcée depuis le backend
-        try:
-            weather_response = requests.get("http://127.0.0.1:8000/get-weather", timeout=2)
-            forced_weather = weather_response.json()
-        except:
-            forced_weather = {"condition": None, "rain_intensity": None}
-        
-        # Simulation météo (utiliser la météo forcée si disponible)
-        if forced_weather["condition"] == "sunny":
-            pleut = False
-            intensite_pluie = None
-        elif forced_weather["condition"] == "cloudy":
-            pleut = False
-            intensite_pluie = None
-        elif forced_weather["condition"] == "rainy":
-            pleut = True
-            intensite_pluie = forced_weather.get("rain_intensity", "modérée")
+        # Si on a des données manuelles en cache, les utiliser pour ce cycle
+        if manual_data_cache:
+            # Utiliser les données manuelles
+            temperature = manual_data_cache.get("temperature", 25)
+            lumiere = manual_data_cache.get("light", 50000)
+            vitesse_vent = manual_data_cache.get("wind_speed", 10)
+            pleut = manual_data_cache.get("rainfall", False)
+            intensite_pluie_str = manual_data_cache.get("rainfall_intensity", "none")
+            humidite_air = manual_data_cache.get("humidity", 60)
+            
+            # Mettre à jour l'humidité du sol dans les capteurs pour qu'elle persiste
+            capteurs['humidite_10cm'].humidite = manual_data_cache.get("soil_moisture_10cm", 45)
+            capteurs['humidite_30cm'].humidite = manual_data_cache.get("soil_moisture_30cm", 55)
+            capteurs['humidite_60cm'].humidite = manual_data_cache.get("soil_moisture_60cm", 65)
+            
+            irrigation_active = manual_data_cache.get("pump_active", False)
+            
+            # Utiliser l'heure simulée si disponible
+            if manual_data_cache.get("simulated_hour") is not None:
+                temps_simulation = manual_data_cache.get("simulated_hour")
+                heure_actuelle = temps_simulation
+            
+            # Afficher les valeurs synchronisées
+            print(f"   ✅ Température: {temperature:.1f}°C")
+            print(f"   ✅ Lumière: {lumiere:.0f} lux")
+            print(f"   ✅ Vent: {vitesse_vent:.1f} km/h")
+            print(f"   ✅ Humidité air: {humidite_air:.1f}%")
+            print(f"   ✅ Humidité sol 10cm: {capteurs['humidite_10cm'].humidite:.1f}%")
+            print(f"   ✅ Humidité sol 30cm: {capteurs['humidite_30cm'].humidite:.1f}%")
+            print(f"   ✅ Humidité sol 60cm: {capteurs['humidite_60cm'].humidite:.1f}%")
+            print(f"   ✅ Pluie: {'Oui' if pleut else 'Non'}")
+            print(f"   ✅ Pompe: {'ON' if irrigation_active else 'OFF'}")
+            print(f"   ✅ Heure: {heure_actuelle}:00\n")
+            
+            # Préparer les données pour l'envoi (en utilisant les valeurs manuelles)
+            humidite_10cm = capteurs['humidite_10cm'].humidite
+            humidite_30cm = capteurs['humidite_30cm'].humidite
+            humidite_60cm = capteurs['humidite_60cm'].humidite
+            
+            # Vider le cache pour revenir à la simulation normale au prochain cycle
+            manual_data_cache = None
         else:
-            # Mode automatique : génération aléatoire
-            pleut, intensite_pluie = capteurs['pluie'].simuler()
-        
-        vitesse_vent = capteurs['vent'].simuler()
-        
-        # Simulation capteurs
-        temperature = capteurs['temperature'].simuler(heure_actuelle, saison)
-        lumiere = capteurs['lumiere'].simuler(heure_actuelle)
-        
-        # Simulation humidité du sol (3 profondeurs)
-        # IMPORTANT : Utiliser l'état de la pompe reçu du backend
-        humidite_10cm = capteurs['humidite_10cm'].simuler(
-            300, temperature, lumiere, vitesse_vent, irrigation_active, pleut
-        )
-        humidite_30cm = capteurs['humidite_30cm'].simuler(
-            300, temperature, lumiere, vitesse_vent, irrigation_active, pleut
-        )
-        humidite_60cm = capteurs['humidite_60cm'].simuler(
-            300, temperature, lumiere, vitesse_vent, irrigation_active, pleut
-        )
-        
-        # Calculer l'humidité de l'air (simulation basique)
-        # En été : plus sec, En hiver : plus humide
-        humidite_air_base = {
-            'printemps': 60,
-            'ete': 45,
-            'automne': 70,
-            'hiver': 80
-        }.get(saison, 60)
-        
-        # Ajustement selon la pluie
-        if pleut:
-            humidite_air = min(100, humidite_air_base + random.uniform(15, 30))
-        else:
-            humidite_air = humidite_air_base + random.uniform(-10, 10)
-        
-        humidite_air = round(max(20, min(100, humidite_air)), 1)
-        
-        # Déterminer l'intensité de la pluie
-        intensite_pluie_str = 'none'
-        if pleut:
-            if intensite_pluie == 'légère':
-                intensite_pluie_str = 'light'
-            elif intensite_pluie == 'modérée':
-                intensite_pluie_str = 'moderate'
-            elif intensite_pluie == 'forte':
-                intensite_pluie_str = 'heavy'
+            # Mode simulation normale
+            
+            # Vérifier s'il y a une météo forcée depuis le backend
+            try:
+                weather_response = requests.get("http://127.0.0.1:8000/get-weather", timeout=2)
+                forced_weather = weather_response.json()
+            except:
+                forced_weather = {"condition": None, "rain_intensity": None}
+            
+            # Simulation météo (utiliser la météo forcée si disponible)
+            if forced_weather["condition"] == "sunny":
+                pleut = False
+                intensite_pluie = None
+            elif forced_weather["condition"] == "cloudy":
+                pleut = False
+                intensite_pluie = None
+            elif forced_weather["condition"] == "rainy":
+                pleut = True
+                intensite_pluie = forced_weather.get("rain_intensity", "modérée")
+            else:
+                # Mode automatique : génération aléatoire
+                pleut, intensite_pluie = capteurs['pluie'].simuler()
+            
+            vitesse_vent = capteurs['vent'].simuler()
+            
+            # Simulation capteurs
+            temperature = capteurs['temperature'].simuler(heure_actuelle, saison)
+            lumiere = capteurs['lumiere'].simuler(heure_actuelle)
+            
+            # Simulation humidité du sol (3 profondeurs)
+            # IMPORTANT : Utiliser l'état de la pompe reçu du backend
+            humidite_10cm = capteurs['humidite_10cm'].simuler(
+                300, temperature, lumiere, vitesse_vent, irrigation_active, pleut
+            )
+            humidite_30cm = capteurs['humidite_30cm'].simuler(
+                300, temperature, lumiere, vitesse_vent, irrigation_active, pleut
+            )
+            humidite_60cm = capteurs['humidite_60cm'].simuler(
+                300, temperature, lumiere, vitesse_vent, irrigation_active, pleut
+            )
+            
+            # Calculer l'humidité de l'air (simulation basique)
+            # En été : plus sec, En hiver : plus humide
+            humidite_air_base = {
+                'printemps': 60,
+                'ete': 45,
+                'automne': 70,
+                'hiver': 80
+            }.get(saison, 60)
+            
+            # Ajustement selon la pluie
+            if pleut:
+                humidite_air = min(100, humidite_air_base + random.uniform(15, 30))
+            else:
+                humidite_air = humidite_air_base + random.uniform(-10, 10)
+            
+            humidite_air = round(max(20, min(100, humidite_air)), 1)
+            
+            # Déterminer l'intensité de la pluie
+            intensite_pluie_str = 'none'
+            if pleut:
+                if intensite_pluie == 'légère':
+                    intensite_pluie_str = 'light'
+                elif intensite_pluie == 'modérée':
+                    intensite_pluie_str = 'moderate'
+                elif intensite_pluie == 'forte':
+                    intensite_pluie_str = 'heavy'
         
         # Préparer les données COMPLÈTES pour le backend
         payload = {

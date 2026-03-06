@@ -182,12 +182,29 @@ function Dashboard() {
         manualData.soil_moisture_60cm
       ) / 3;
 
+      // S'assurer que rainfall_intensity est 'none' si rainfall est false
+      const rainfall_intensity = manualData.rainfall ? manualData.rainfall_intensity : 'none';
+
+      // Calculer l'heure simulée (heure actuelle 0-23)
+      const simulated_hour = new Date().getHours();
+
       const dataToSend = {
-        ...manualData,
-        soil_moisture,
         zone_id: selectedZoneId || 'zone-1',
+        simulated_hour: simulated_hour,
+        humidity: Number(manualData.humidity),
+        temperature: Number(manualData.temperature),
+        soil_moisture: Number(soil_moisture),
+        soil_moisture_10cm: Number(manualData.soil_moisture_10cm),
+        soil_moisture_30cm: Number(manualData.soil_moisture_30cm),
+        soil_moisture_60cm: Number(manualData.soil_moisture_60cm),
+        light: Number(manualData.light),
+        wind_speed: Number(manualData.wind_speed),
+        rainfall: Boolean(manualData.rainfall),
+        rainfall_intensity: rainfall_intensity,
         pump_was_active: false,
       };
+
+      console.log('📤 Envoi données manuelles:', dataToSend);
 
       const response = await fetch('http://127.0.0.1:8000/send-manual-data', {
         method: 'POST',
@@ -199,15 +216,13 @@ function Dashboard() {
 
       if (response.ok) {
         const result = await response.json();
-        console.log('Décision d\'irrigation:', result);
-        alert(`Données envoyées avec succès!\n\nDécision: ${result.decision}\nÉtat irrigation: ${result.irrigation_active ? '✅ ACTIVÉE' : '❌ DÉSACTIVÉE'}\n\nHumidité sol moyenne: ${soil_moisture.toFixed(1)}%`);
+        console.log('✅ Décision d\'irrigation:', result);
         setShowManualModal(false);
       } else {
-        alert('Erreur lors de l\'envoi des données');
+        console.error('❌ Erreur lors de l\'envoi des données');
       }
     } catch (error) {
-      console.error('Erreur:', error);
-      alert('Erreur de connexion au backend');
+      console.error('❌ Erreur:', error);
     }
   };
 
@@ -1135,7 +1150,11 @@ function Dashboard() {
                     <input 
                       type="checkbox" 
                       checked={manualData.rainfall}
-                      onChange={(e) => setManualData({...manualData, rainfall: e.target.checked})}
+                      onChange={(e) => setManualData({
+                        ...manualData, 
+                        rainfall: e.target.checked,
+                        rainfall_intensity: e.target.checked ? manualData.rainfall_intensity : 'none'
+                      })}
                       className="w-5 h-5 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
                     />
                     <span className="text-sm font-medium text-gray-700">Il pleut actuellement</span>
