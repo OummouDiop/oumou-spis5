@@ -124,7 +124,7 @@ def receive_manual_data(data: SensorDataCreate):
     # Activer le mode manuel et mettre en pause pendant 1 minute
     simulation_control["manual_mode"] = True
     simulation_control["paused"] = True
-    simulation_control["pause_until"] = datetime.utcnow() + timedelta(seconds=30)
+    simulation_control["pause_until"] = datetime.utcnow() + timedelta(seconds=8)
     
     # Traiter les données manuelles
     return receive_sensor_data(data)
